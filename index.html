@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search Engine Indexing Using Inverted Index</title>
+<style>
+  :root{
+    --bg:#0d1117;
+    --panel:#141a22;
+    --panel2:#10151c;
+    --border:#2a323d;
+    --text:#e7ecf1;
+    --muted:#8b96a3;
+    --amber:#e3b341;
+    --teal:#56c2c9;
+    --green:#4caf7d;
+    --red:#d16969;
+    --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.5; padding-bottom:60px;
+  }
+  header{
+    padding:28px 24px 20px; text-align:center; border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,#121820,#0d1117);
+  }
+  header h1{
+    margin:0; font-size:1.5rem; letter-spacing:0.5px; font-weight:700;
+  }
+  header p{ margin:6px 0 0; color:var(--muted); font-size:0.95rem;}
+
+  .wrap{ max-width:1280px; margin:0 auto; padding:20px 20px 0; }
+
+  .stats{
+    display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:20px;
+  }
+  .stat{
+    background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:12px 14px; text-align:center;
+  }
+  .stat .num{ font-size:1.4rem; font-weight:700; font-family:var(--mono); color:var(--amber); }
+  .stat .label{ font-size:0.75rem; color:var(--muted); margin-top:2px;}
+
+  .grid3{ display:grid; grid-template-columns:1.15fr 1fr 1fr; gap:16px; }
+  @media (max-width:960px){ .grid3{ grid-template-columns:1fr; } .stats{grid-template-columns:repeat(2,1fr);} }
+
+  .panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    padding:16px; display:flex; flex-direction:column; gap:10px;
+  }
+  .panel h2{
+    margin:0; font-size:0.95rem; font-weight:700; letter-spacing:0.3px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .panel h2 .tag{ font-size:0.7rem; font-weight:400; color:var(--muted); }
+
+  .doc-card{
+    background:var(--panel2); border:1px solid var(--border); border-radius:8px;
+    padding:10px; transition:border-color .2s, box-shadow .2s;
+  }
+  .doc-card.match{ border-color:var(--green); box-shadow:0 0 0 1px var(--green) inset; }
+  .doc-card .doc-head{
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;
+  }
+  .doc-card .doc-head b{ font-family:var(--mono); font-size:0.85rem; color:var(--teal);}
+  .doc-card textarea{
+    width:100%; resize:vertical; min-height:44px; background:#0b0f14; color:var(--text);
+    border:1px solid var(--border); border-radius:6px; padding:8px; font-family:var(--sans);
+    font-size:0.9rem;
+  }
+  .doc-card .doc-foot{ display:flex; justify-content:flex-end; margin-top:6px; }
+
+  button{
+    font-family:var(--sans); font-size:0.82rem; cursor:pointer; border-radius:6px;
+    border:1px solid var(--border); background:#1c232c; color:var(--text);
+    padding:7px 11px; transition:background .15s, border-color .15s;
+  }
+  button:hover{ background:#232c37; border-color:#3a4552; }
+  button.primary{ background:var(--amber); color:#1a1400; border-color:var(--amber); font-weight:700; }
+  button.primary:hover{ background:#f0c256; }
+  button.danger{ color:var(--red); }
+  button:disabled{ opacity:0.45; cursor:not-allowed; }
+
+  .btn-row{ display:flex; flex-wrap:wrap; gap:8px; }
+
+  table{ width:100%; border-collapse:collapse; font-size:0.85rem; }
+  th,td{ text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  th{ color:var(--muted); font-weight:600; font-size:0.75rem; text-transform:none; }
+  td.term{ font-family:var(--mono); color:var(--teal); cursor:pointer; }
+  td.term:hover{ text-decoration:underline; }
+  tr.highlight td{ background:#1c2a2e; }
+  .posting-chip{
+    display:inline-block; background:#1c232c; border:1px solid var(--border); border-radius:4px;
+    padding:1px 6px; margin:1px; font-family:var(--mono); font-size:0.78rem;
+  }
+  .posting-chip.hit{ border-color:var(--green); color:var(--green); }
+
+  .search-input-row{ display:flex; gap:8px; }
+  .search-input-row input{
+    flex:1; background:#0b0f14; border:1px solid var(--border); border-radius:6px;
+    color:var(--text); padding:8px 10px; font-family:var(--mono); font-size:0.9rem;
+  }
+
+  .flow{ display:flex; flex-direction:column; gap:2px; font-family:var(--mono); font-size:0.82rem; }
+  .flow .step{
+    padding:6px 8px; border-radius:6px; border:1px solid var(--border); color:var(--muted);
+    background:var(--panel2); transition:all .2s;
+  }
+  .flow .step.active{ border-color:var(--amber); color:var(--amber); background:#221c0e; }
+  .flow .arrow{ text-align:center; color:var(--muted); }
+
+  .result-item{
+    border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--panel2);
+    margin-bottom:6px; font-size:0.85rem;
+  }
+  .result-item b{ color:var(--green); font-family:var(--mono); }
+  .no-results{ color:var(--muted); font-size:0.85rem; font-style:italic; }
+
+  .section{
+    background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    padding:18px; margin-top:20px;
+  }
+  .section h2{ margin:0 0 12px; font-size:1rem; }
+  .section h3{ margin:14px 0 6px; font-size:0.85rem; color:var(--muted); font-weight:600; }
+
+  .compare-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:760px){ .compare-grid{ grid-template-columns:1fr; } }
+  .compare-col{ background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:12px; }
+  .compare-col h4{ margin:0 0 8px; font-size:0.85rem; }
+  .compare-col.seq h4{ color:var(--red); }
+  .compare-col.inv h4{ color:var(--green); }
+  .check-line{
+    font-family:var(--mono); font-size:0.83rem; padding:4px 6px; border-radius:4px; margin-bottom:3px;
+    background:#0b0f14; border:1px solid var(--border); color:var(--muted); opacity:0.4; transition:all .2s;
+  }
+  .check-line.done{ opacity:1; }
+  .check-line.hit{ border-color:var(--green); color:var(--green); }
+  .check-line.miss{ border-color:var(--red); color:var(--red); }
+  .cost-note{ margin-top:8px; font-size:0.78rem; color:var(--muted); }
+
+  pre.code{
+    background:#0b0f14; border:1px solid var(--border); border-radius:8px; padding:12px;
+    overflow-x:auto; font-family:var(--mono); font-size:0.8rem; color:#c9d4de;
+  }
+
+  .log{
+    background:#0b0f14; border:1px solid var(--border); border-radius:8px; padding:10px;
+    font-family:var(--mono); font-size:0.78rem; max-height:220px; overflow-y:auto; color:var(--muted);
+  }
+  .log div{ padding:1px 0; }
+  .log div.hit{ color:var(--green); }
+
+  details{ background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
+  details summary{ cursor:pointer; font-weight:600; font-size:0.88rem; }
+  details ul{ margin:8px 0 0; padding-left:18px; font-size:0.85rem; color:var(--muted); }
+
+  .arrow-chain{ font-family:var(--mono); font-size:0.85rem; text-align:center; color:var(--muted); line-height:1.9; }
+  .arrow-chain b{ color:var(--teal); }
+
+  .step-controls{ display:flex; gap:8px; align-items:center; margin-top:6px; }
+  .step-label{ font-size:0.8rem; color:var(--muted); }
+
+  footer{ text-align:center; color:var(--muted); font-size:0.78rem; margin-top:30px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SEARCH ENGINE INDEXING USING INVERTED INDEX</h1>
+  <p>Interactive Inverted Index Simulator</p>
+</header>
+
+<div class="wrap">
+
+  <div class="stats">
+    <div class="stat"><div class="num" id="statDocs">0</div><div class="label">Documents</div></div>
+    <div class="stat"><div class="num" id="statTerms">0</div><div class="label">Unique Terms</div></div>
+    <div class="stat"><div class="num" id="statPostings">0</div><div class="label">Total Postings</div></div>
+    <div class="stat"><div class="num" id="statQuery">-</div><div class="label">Last Query</div></div>
+    <div class="stat"><div class="num" id="statResults">-</div><div class="label">Results Found</div></div>
+  </div>
+
+  <div class="grid3">
+
+    <!-- DOCUMENTS -->
+    <div class="panel">
+      <h2>DOCUMENTS <span class="tag" id="indexStatus">index not built</span></h2>
+      <div id="docList"></div>
+      <div class="btn-row">
+        <button id="btnAddDoc">+ Add Document</button>
+        <button id="btnReset">Reset</button>
+      </div>
+      <div class="btn-row">
+        <button class="primary" id="btnBuild">Build Inverted Index</button>
+        <button id="btnStepBuild">Step-by-Step Build</button>
+      </div>
+      <div id="stepArea"></div>
+    </div>
+
+    <!-- INVERTED INDEX -->
+    <div class="panel">
+      <h2>INVERTED INDEX</h2>
+      <p style="font-size:0.8rem;color:var(--muted);margin:0;">
+        TERM = word being searched &nbsp;|&nbsp; POSTING LIST = document IDs containing that word
+      </p>
+      <table id="indexTable">
+        <thead><tr><th>TERM</th><th>POSTING LIST</th></tr></thead>
+        <tbody id="indexBody"><tr><td colspan="2" style="color:var(--muted);">Build the index to see terms.</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="panel">
+      <h2>SEARCH</h2>
+      <div class="search-input-row">
+        <input id="searchInput" type="text" placeholder="e.g. java" />
+        <button class="primary" id="btnSearch">SEARCH</button>
+      </div>
+      <div class="flow" id="searchFlow">
+        <div class="step" data-s="1">User Query</div>
+        <div class="arrow">↓</div>
+        <div class="step" data-s="2">Search term in index</div>
+        <div class="arrow">↓</div>
+        <div class="step" data-s="3">Find posting list</div>
+        <div class="arrow">↓</div>
+        <div class="step" data-s="4">Read document IDs</div>
+        <div class="arrow">↓</div>
+        <div class="step" data-s="5">Display matching documents</div>
+      </div>
+      <div id="searchResults"></div>
+    </div>
+
+  </div>
+
+  <!-- TOKENIZATION -->
+  <div class="section" id="tokenSection" style="display:none;">
+    <h2>Tokenization Visualization</h2>
+    <div id="tokenBody"></div>
+  </div>
+
+  <!-- ACTIVITY LOG -->
+  <div class="section">
+    <h2>Activity Log</h2>
+    <div class="log" id="activityLog"><div>Waiting for action...</div></div>
+  </div>
+
+  <!-- SEQUENTIAL VS INVERTED -->
+  <div class="section">
+    <h2>Sequential Search vs Inverted Index</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-top:-6px;">
+      Run a search above to compare how each approach locates the term "<span id="compareTermLabel">-</span>".
+    </p>
+    <div class="compare-grid">
+      <div class="compare-col seq">
+        <h4>SEQUENTIAL SEARCH</h4>
+        <div id="seqSteps"><div class="no-results">Run a search to see this comparison.</div></div>
+        <div class="cost-note" id="seqCost"></div>
+      </div>
+      <div class="compare-col inv">
+        <h4>INVERTED INDEX</h4>
+        <div id="invSteps"><div class="no-results">Run a search to see this comparison.</div></div>
+        <div class="cost-note" id="invCost"></div>
+      </div>
+    </div>
+    <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0;">
+      Sequential search checks documents one by one. Inverted index uses the stored term → document relationship built in advance.
+      Building the index takes extra time and memory up front; it can reduce repeated document scanning during queries, but is not automatically faster in every situation.
+    </p>
+  </div>
+
+  <!-- COMPLEXITY -->
+  <div class="section">
+    <h2>Complexity</h2>
+    <p style="font-size:0.85rem;"><b>Sequential Search:</b> repeated document scanning as the collection grows — every query re-reads every document.</p>
+    <p style="font-size:0.85rem;"><b>Inverted Index:</b> index construction requires extra work and storage up front. After construction, term lookup can access the posting list directly if a fast dictionary (e.g. hash table) is used — but in a simple array-based C implementation, finding a term may still require scanning the index entries one by one.</p>
+    <p style="font-size:0.85rem;">Index Storage ≈ <span style="font-family:var(--mono);color:var(--amber);">O(T + P)</span> &nbsp;where T = number of unique terms, P = total number of postings.</p>
+    <p style="font-size:0.8rem;color:var(--muted);">Note: an inverted index does not automatically give O(1) lookup — that depends on the dictionary structure used to store the terms.</p>
+  </div>
+
+  <!-- C IMPLEMENTATION -->
+  <div class="section">
+    <h2>C Implementation Connection</h2>
+    <p style="font-size:0.85rem;">The same concept maps directly onto a C implementation using structures, character arrays, integer arrays, functions, and loops:</p>
+    <pre class="code">struct IndexEntry {
+    char term[30];
+    int docIds[20];
+    int count;
+};
+
+struct IndexEntry index[MAX_TERMS];
+int indexSize = 0;
+
+/* Example: add a document id to a term's posting list */
+void addPosting(char *term, int docId) {
+    for (int i = 0; i < indexSize; i++) {
+        if (strcmp(index[i].term, term) == 0) {
+            index[i].docIds[index[i].count++] = docId;
+            return;
+        }
+    }
+    strcpy(index[indexSize].term, term);
+    index[indexSize].docIds[0] = docId;
+    index[indexSize].count = 1;
+    indexSize++;
+}</pre>
+    <p style="font-size:0.78rem;color:var(--muted);">This simulator runs in HTML/CSS/JavaScript for visualization only — the data structure logic and terminology match the C project (struct + parallel arrays), not a Java or Python implementation.</p>
+  </div>
+
+  <!-- LIMITATIONS -->
+  <div class="section">
+    <details>
+      <summary>Limitations</summary>
+      <ul>
+        <li>Basic term matching only</li>
+        <li>Does not understand the meaning of sentences</li>
+        <li>Does not automatically rank results</li>
+        <li>Requires extra memory for the index</li>
+        <li>Index must be rebuilt when documents change</li>
+        <li>This is an educational simulator, not a complete commercial search engine</li>
+        <li>A simple C implementation has practical size limits (fixed array sizes)</li>
+      </ul>
+    </details>
+  </div>
+
+  <!-- FUTURE SCOPE -->
+  <div class="section">
+    <h2>Future Scope</h2>
+    <div class="arrow-chain">
+      <b>Inverted Index</b> ↓<br>
+      Efficient Dictionary / Hashing ↓<br>
+      Dynamic Index Updates ↓<br>
+      Distributed Indexing ↓<br>
+      Ranking ↓<br>
+      Semantic Search ↓<br>
+      Advanced Search System
+    </div>
+  </div>
+
+</div>
+
+<footer>Data Structures Project — Search Engine Indexing Using Inverted Index</footer>
+
+<script>
+// ---------- State ----------
+let documents = [];
+let index = {};        // term -> Set of docIds (1-based, position in documents array)
+let indexBuilt = false;
+let lastQuery = "";
+let lastResultsCount = "-";
+
+function defaultDocs(){
+  return [
+    "Java is powerful",
+    "Python is easy",
+    "Java is easy"
+  ];
+}
+
+function resetState(){
+  documents = defaultDocs();
+  index = {};
+  indexBuilt = false;
+  lastQuery = "";
+  lastResultsCount = "-";
+  document.getElementById("tokenSection").style.display = "none";
+  document.getElementById("stepArea").innerHTML = "";
+  document.getElementById("searchInput").value = "";
+  document.getElementById("searchResults").innerHTML = "";
+  document.getElementById("indexBody").innerHTML = '<tr><td colspan="2" style="color:var(--muted);">Build the index to see terms.</td></tr>';
+  resetFlow();
+  resetCompare();
+  log("Simulator reset. Loaded example dataset.", false, true);
+  renderDocs();
+  updateStats();
+}
+
+// ---------- Utility ----------
+function tokenize(text){
+  return (text.toLowerCase().match(/[a-z0-9]+/g)) || [];
+}
+
+function log(msg, hit, clear){
+  const logEl = document.getElementById("activityLog");
+  if(clear) logEl.innerHTML = "";
+  const line = document.createElement("div");
+  line.textContent = "> " + msg;
+  if(hit) line.classList.add("hit");
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function sleep(ms){ return new Promise(res => setTimeout(res, ms)); }
+
+// ---------- Documents panel ----------
+function renderDocs(){
+  const list = document.getElementById("docList");
+  list.innerHTML = "";
+  documents.forEach((text, i) => {
+    const id = i + 1;
+    const card = document.createElement("div");
+    card.className = "doc-card";
+    card.dataset.docid = id;
+    card.innerHTML = `
+      <div class="doc-head">
+        <b>Document ${id}</b>
+        <button class="danger" data-remove="${i}" ${documents.length <= 1 ? "disabled" : ""}>Remove</button>
+      </div>
+      <textarea data-idx="${i}">${escapeHtml(text)}</textarea>
+    `;
+    list.appendChild(card);
+  });
+
+  list.querySelectorAll("textarea").forEach(ta => {
+    ta.addEventListener("input", e => {
+      const idx = parseInt(e.target.dataset.idx, 10);
+      documents[idx] = e.target.value;
+      markIndexStale();
+    });
+  });
+  list.querySelectorAll("[data-remove]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      const idx = parseInt(e.target.dataset.remove, 10);
+      documents.splice(idx, 1);
+      markIndexStale();
+      renderDocs();
+      updateStats();
+      log(`Document ${idx+1} removed. Rebuild the index to update search results.`);
+    });
+  });
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function markIndexStale(){
+  indexBuilt = false;
+  document.getElementById("indexStatus").textContent = "index not built";
+  document.getElementById("indexBody").innerHTML = '<tr><td colspan="2" style="color:var(--muted);">Documents changed — rebuild the index.</td></tr>';
+}
+
+document.getElementById("btnAddDoc").addEventListener("click", () => {
+  documents.push("");
+  renderDocs();
+  updateStats();
+  markIndexStale();
+  log(`Document ${documents.length} added.`);
+});
+
+document.getElementById("btnReset").addEventListener("click", resetState);
+
+// ---------- Build index ----------
+async function buildIndex(stepByStep){
+  document.getElementById("btnBuild").disabled = true;
+  document.getElementById("btnStepBuild").disabled = true;
+  document.getElementById("searchResults").innerHTML = "";
+  resetFlow();
+  resetCompare();
+
+  const stepArea = document.getElementById("stepArea");
+  const stages = ["Reading documents","Tokenizing","Extracting terms","Building index","Index completed"];
+
+  function showStage(n){
+    stepArea.innerHTML = `<div class="step-label">Step ${n} of 5: <b style="color:var(--amber)">${stages[n-1]}</b></div>`;
+  }
+
+  log("Build Inverted Index started.", false, true);
+
+  index = {};
+  const tokenBody = document.getElementById("tokenBody");
+  tokenBody.innerHTML = "";
+  document.getElementById("tokenSection").style.display = "block";
+
+  showStage(1);
+  log("Reading documents...");
+  if(stepByStep) await waitForNext();
+
+  showStage(2);
+  log("Tokenizing documents...");
+  if(stepByStep) await waitForNext();
+
+  showStage(3);
+  for(let i=0; i<documents.length; i++){
+    const docId = i + 1;
+    const tokens = tokenize(documents[i]);
+    const row = document.createElement("div");
+    row.style.marginBottom = "10px";
+    row.innerHTML = `<div style="font-family:var(--mono);font-size:0.82rem;color:var(--teal);margin-bottom:4px;">Document ${docId}</div>
+      <div style="margin-bottom:4px;">${tokens.map(t=>`<span class="posting-chip">${t}</span>`).join(" ") || '<span class="no-results">no terms</span>'}</div>`;
+    tokenBody.appendChild(row);
+
+    const uniqueTerms = [...new Set(tokens)];
+    for(const term of uniqueTerms){
+      if(!index[term]) index[term] = new Set();
+      index[term].add(docId);
+    }
+    log(`Document ${docId} processed → tokenized into ${tokens.length} term(s).`);
+    for(const term of uniqueTerms){
+      log(`Added "${term}" → [${docId}]`);
+    }
+    if(stepByStep) await sleep(250); else await sleep(180);
+  }
+
+  showStage(4);
+  log("Building index table...");
+  if(stepByStep) await waitForNext();
+
+  renderIndexTable();
+  indexBuilt = true;
+  document.getElementById("indexStatus").textContent = "index built ✓";
+
+  showStage(5);
+  log("Inverted index completed.", true);
+
+  updateStats();
+  document.getElementById("btnBuild").disabled = false;
+  document.getElementById("btnStepBuild").disabled = false;
+}
+
+// simple "wait for next" used only in step-by-step mode
+function waitForNext(){
+  return new Promise(resolve => {
+    const stepArea = document.getElementById("stepArea");
+    const btn = document.createElement("button");
+    btn.className = "primary";
+    btn.textContent = "Next Step ▶";
+    btn.style.marginTop = "6px";
+    btn.addEventListener("click", () => { btn.remove(); resolve(); });
+    stepArea.appendChild(btn);
+  });
+}
+
+document.getElementById("btnBuild").addEventListener("click", () => buildIndex(false));
+document.getElementById("btnStepBuild").addEventListener("click", () => buildIndex(true));
+
+// ---------- Index table ----------
+function renderIndexTable(){
+  const body = document.getElementById("indexBody");
+  body.innerHTML = "";
+  const terms = Object.keys(index).sort();
+  if(terms.length === 0){
+    body.innerHTML = '<tr><td colspan="2" style="color:var(--muted);">No terms found.</td></tr>';
+    return;
+  }
+  terms.forEach(term => {
+    const postings = [...index[term]].sort((a,b)=>a-b);
+    const tr = document.createElement("tr");
+    tr.dataset.term = term;
+    tr.innerHTML = `<td class="term">${term}</td><td>${postings.map(p=>`<span class="posting-chip">${p}</span>`).join(" ")}</td>`;
+    tr.querySelector(".term").addEventListener("click", () => {
+      body.querySelectorAll("tr").forEach(r => r.classList.remove("highlight"));
+      tr.classList.add("highlight");
+    });
+    body.appendChild(tr);
+  });
+}
+
+// ---------- Stats ----------
+function updateStats(){
+  document.getElementById("statDocs").textContent = documents.length;
+  const terms = Object.keys(index);
+  const totalPostings = terms.reduce((sum,t) => sum + index[t].size, 0);
+  document.getElementById("statTerms").textContent = indexBuilt ? terms.length : 0;
+  document.getElementById("statPostings").textContent = indexBuilt ? totalPostings : 0;
+  document.getElementById("statQuery").textContent = lastQuery || "-";
+  document.getElementById("statResults").textContent = lastResultsCount;
+}
+
+// ---------- Search ----------
+function resetFlow(){
+  document.querySelectorAll("#searchFlow .step").forEach(s => s.classList.remove("active"));
+}
+
+async function runSearch(){
+  const raw = document.getElementById("searchInput").value.trim().toLowerCase();
+  const resultsEl = document.getElementById("searchResults");
+  document.querySelectorAll(".doc-card").forEach(c => c.classList.remove("match"));
+
+  if(!indexBuilt){
+    resultsEl.innerHTML = '<div class="no-results">Build the inverted index first.</div>';
+    return;
+  }
+  if(!raw){
+    resultsEl.innerHTML = '<div class="no-results">Enter a search term.</div>';
+    return;
+  }
+
+  resultsEl.innerHTML = "";
+  resetFlow();
+  const steps = document.querySelectorAll("#searchFlow .step");
+
+  log(`Query: ${raw}`, false, false);
+
+  steps[0].classList.add("active"); await sleep(200);
+  steps[1].classList.add("active"); await sleep(200);
+
+  const postings = index[raw] ? [...index[raw]].sort((a,b)=>a-b) : [];
+
+  steps[2].classList.add("active");
+  log(postings.length ? `Posting list found: [${postings.join(", ")}]` : "Term not found in index.", postings.length > 0);
+  await sleep(200);
+
+  steps[3].classList.add("active"); await sleep(200);
+  steps[4].classList.add("active");
+
+  lastQuery = raw;
+  lastResultsCount = postings.length;
+
+  if(postings.length === 0){
+    resultsEl.innerHTML = '<div class="no-results">No matching documents found.</div>';
+  } else {
+    postings.forEach(docId => {
+      const item = document.createElement("div");
+      item.className = "result-item";
+      item.innerHTML = `<b>✓ Document ${docId}</b><br>${escapeHtml(documents[docId-1] || "")}`;
+      resultsEl.appendChild(item);
+      const card = document.querySelector(`.doc-card[data-docid="${docId}"]`);
+      if(card) card.classList.add("match");
+    });
+  }
+
+  updateStats();
+  runCompare(raw, postings);
+}
+
+document.getElementById("btnSearch").addEventListener("click", runSearch);
+document.getElementById("searchInput").addEventListener("keydown", e => {
+  if(e.key === "Enter") runSearch();
+});
+
+// ---------- Sequential vs Inverted comparison ----------
+function resetCompare(){
+  document.getElementById("compareTermLabel").textContent = "-";
+  document.getElementById("seqSteps").innerHTML = '<div class="no-results">Run a search to see this comparison.</div>';
+  document.getElementById("invSteps").innerHTML = '<div class="no-results">Run a search to see this comparison.</div>';
+  document.getElementById("seqCost").textContent = "";
+  document.getElementById("invCost").textContent = "";
+}
+
+async function runCompare(term, postings){
+  document.getElementById("compareTermLabel").textContent = term;
+  const seqEl = document.getElementById("seqSteps");
+  const invEl = document.getElementById("invSteps");
+  seqEl.innerHTML = "";
+  invEl.innerHTML = "";
+
+  // Sequential: check every document one by one
+  for(let i=0; i<documents.length; i++){
+    const docId = i+1;
+    const line = document.createElement("div");
+    line.className = "check-line";
+    line.textContent = `Check Document ${docId}...`;
+    seqEl.appendChild(line);
+  }
+  const seqLines = seqEl.querySelectorAll(".check-line");
+  let checkedCount = 0;
+  for(let i=0; i<documents.length; i++){
+    await sleep(280);
+    const docId = i+1;
+    const isHit = tokenize(documents[i]).includes(term);
+    seqLines[i].classList.add("done");
+    seqLines[i].classList.add(isHit ? "hit" : "miss");
+    seqLines[i].textContent = isHit ? `Check Document ${docId} → match` : `Check Document ${docId} → no match`;
+    checkedCount++;
+  }
+  document.getElementById("seqCost").textContent = `${checkedCount} document(s) scanned to answer this query.`;
+
+  // Inverted index: direct lookup
+  invEl.innerHTML = `<div class="check-line done">Find "${term}" in index...</div>`;
+  await sleep(280);
+  const found = postings.length > 0;
+  const line2 = document.createElement("div");
+  line2.className = "check-line done " + (found ? "hit" : "miss");
+  line2.textContent = found ? `"${term}" → [${postings.join(", ")}]` : `"${term}" not found in index`;
+  invEl.appendChild(line2);
+  document.getElementById("invCost").textContent = `1 index lookup used the pre-built term → document relationship (no document text was scanned during the query).`;
+}
+
+// ---------- Init ----------
+resetState();
+</script>
+</body>
+</html>
